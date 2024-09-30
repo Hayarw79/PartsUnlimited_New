@@ -1,21 +1,84 @@
-# Node.js
-# Build a general Node.js project with npm.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+# ASP.NET
+# Build and test ASP.NET projects.
+# Add steps that publish symbols, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/apps/aspnet/build-aspnet-4
 
-trigger:
-- master
+trigger: none
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'windows-2019'
 
-steps:
-- task: NodeTool@0
-  inputs:
-    versionSpec: '20.x'
-  displayName: 'Install Node.js'
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
 
-- script: |
-    npm install
-    npm run build
-  displayName: 'npm install and build'
+stages:
+- stage: Build
+  jobs:
+  - job: Build
+    steps:
+    - task: NuGetToolInstaller@0
+
+    - task: NuGetCommand@2
+      inputs:
+        restoreSolution: '$(solution)'
+
+    - task: VSBuild@1
+      inputs:
+        solution: '$(solution)'
+        msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactStagingDirectory)"'
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+
+    - task: VSTest@2
+      inputs:
+        testSelector: 'testAssemblies'
+        testAssemblyVer2: |
+          **\*test*.dll
+          !**\obj\**
+
+        searchFolder: '$(System.DefaultWorkingDirectory)'
+        vsTestVersion: '16.0'
+        platform: '$(buildPlatform)'
+        configuration: '$(buildConfiguration)'
+    
+
+    - task: CopyFiles@2
+      displayName: 'Copy Files'
+      inputs:
+        SourceFolder: '$(build.sourcesdirectory)'
+        Contents: '**/*.json'
+        TargetFolder: '$(build.artifactstagingdirectory)'
+        
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact'
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)'
+
+
+- stage: Test
+  jobs:
+  - job: Validate
+    variables:
+      - name: varChangesetNumber
+        value: $[stageDependencies.Build.Build.outputs['componentUpload.changesetNumber'] ]
+
+   
+- stage: Deploy
+  jobs:
+  #- job: Deploy_Application_Precondition
+    # pool: server
+    # steps:  
+
+    # - task: ServiceNow-DevOps-Server-Change-Acceleration@1
+    #   inputs:
+    #     connectedServiceName: '<replace with your service connection>'
+ 
+  - job: Deploy_Application
+    #dependsOn: Deploy_Application_Precondition
+    #condition: succeeded()
+    pool:
+        vmImage: 'ubuntu-latest'
+    steps:
+      - bash: echo "Deploy Application"
